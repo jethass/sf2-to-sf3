@@ -1,3 +1,131 @@
- 
-sf2 to sf3:
 https://www.cloudways.com/blog/upgrade-symfony-2-to-3/
+
+To upgrade, open composer.json and replace the Symfony version  2.7 with 2.8.*
+Now, open SSH terminal and run the following command:
+composer update symfony/symfony --with-dependencies
+
+
+Deprecated Methods for Forms in Symfony 2.8
+---------------------------------------------------------------------------------
+*Cascade_validation attribute is deprecated:
+
+$form = $this->createFormBuilder($article, array('cascade_validation' => true))
+       ->add('author', new AuthorType())
+       ->getForm();
+       
+==>
+
+ $form = $this->createFormBuilder($article)
+       ->add('author', new AuthorType(), array(
+           'constraints' => new Valid(),
+       ))
+       ->getForm();
+       
+       
+*Type names are also deprecated :
+
+$form = $this->createFormBuilder()
+       ->add('name', 'text')
+       ->add('age', 'integer')
+       ->getForm();
+       
+==>
+use Symfony\Component\Form\Extension\Core\Type\IntegerType;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
+ 
+   $form = $this->createFormBuilder()
+       ->add('name', TextType::class)
+       ->add('age', IntegerType::class)
+       ->getForm();
+
+
+*Returning type instances from
+
+  class MyType
+   {
+       public function getParent()
+       {
+           return new ParentType();      
+       }
+    }
+    
+==>
+class MyType
+   {
+       public function getParent()
+       {
+           return ParentType::class;
+       }
+   }
+
+
+*Passing type instances to Form::add(), FormBuilder::add() and the FormFactory::create*()
+$form = $this->createForm(new MyType());
+==>
+$form = $this->createForm(MyType::class);
+
+
+*Moving to the New Directory Structure of Symfony 3.x
+cd projectSF
+mkdir var
+mv app/cache  var/
+mv app/logs var/
+
+*Overriding Methods in AppKernel.php
+Along with creating a new directory, some methods must be overridden in app/AppKernel.php to update the application. Copy and paste the following in Appkernel.php
+
+public function getRootDir()
+    {
+        return __DIR__;
+    }
+    public function getCacheDir()
+    {
+        return dirname(__DIR__).'/var/cache/'.$this->getEnvironment();
+    }
+    public function getLogDir()
+    {
+        return dirname(__DIR__).'/var/logs';
+    }
+
+
+*Move console to bin
+The next step is to move the console file from app folder to bin. You must remember to update the autoloader after this.
+cd projectSF
+mv app/console bin/console
+
+Now open it in the editor and replace :
+require_once __DIR__.'/bootstrap.php.cache'; 
+with: 
+require __DIR__.'/../app/autoload.php';.
+
+
+*Updating Paths in composer.json File
+Now, update the paths for the newly created directories in composer.json. Open it and move to extra attribute and add the following lines in it.
+"extra": {
+        "symfony-app-dir": "app",
+        "symfony-web-dir": "web",
+        "symfony-var-dir": "var",
+        "symfony-bin-dir": "bin",
+        "symfony-assets-install": "relative",
+        "incenteev-parameters": {
+            "file": "app/config/parameters.yml"
+        },
+
+
+*Finally Upgrading to Symfony 3.x:
+Open composer.json and  move to Symfony version declaration and replace it.
+ "symfony/symfony": "2.8.*",
+==>
+  "symfony/symfony": "~3.0",  
+
+composer update symfony/symfony --with-dependencies
+       
+After the installation, run the console command and check the version of symfony.
+ php bin/console
+ 
+ Note: if you are facing problem to open symfony dev environment on cloudways then open 
+ web/app_dev.php file and remove the below condition. it will work as a charm now.
+ 
+  || isset($_SERVER['HTTP_X_FORWARDED_FOR'])
+
+ 
