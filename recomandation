@@ -1,0 +1,313 @@
+https://gist.github.com/mickaelandrieu/5d27a2ffafcbdd64912f549aaf2a6df9
+
+Let's migrate a Symfony 2.8 LTS application to Symfony 3 LTS
+Handle deprecations
+First of all, ensure you don't have any deprecated!
+
+The Symfony documentation explains it well, but let's sum up:
+
+install the phpunit bridge ($ composer require --dev symfony/phpunit-bridge)
+also check all your pages using web profiler and be ensure there is no deprecation error handled
+found errors and need help about how to fix it ? I did a sort of guide.(https://gist.github.com/mickaelandrieu/5211d0047e7a6fbff925)
+if you start from Symfony 2.7 LTS, fix deprecations using Upgrade information 2.7 => 2.8(https://github.com/symfony/symfony/blob/2.8/UPGRADE-2.8.md)
+Update dependencies
+You need to update symfony/symfony metapackage to 3.x branch as described by official docs:
+
+{
+    "...": "...",
+
+    "require": {
+        "symfony/symfony": "3.0.*",
+    },
+    "...": "..."
+}
+But, it's not enough because you also need to update the "autoload", "autoload-dev" and "extra" sections. The reasons are the following ones (afaik):
+
+Appkernel and AppCache classes are autoloaded by Composer
+Your application tests are localized in a new tests folder
+var folder contains cache and log folders
+You also need to remove bin-dir property from config section.
+
+You can update your dependencies using composer:
+
+$ composer update symfony/symfony --with-dependencies --no-scripts
+I use --no-scripts option because otherwise installation scripts will fail.
+
+Files to move, update ...
+remove app/bootstrap.php.cache and app/autoload.php files
+app/Kernel.php should be updated in order to set the new location of cache and logs path
+assetic section from app/config.yml and app/config_dev.yml should be removed (or the AsseticBundle re added)
+the _webconfigurator route MUST be removed from app/config/routing_dev.yml as this doesn't exists anymore (since v4 of DistributionBundle?)
+move app/console to bin/console and update it
+move all tests from src/*Bundle/Tests/* to tests/*Bundle/* (and update namespaces)
+update app.php, app_dev.php and app_test.php to update app/bootstrap.php.cache to var/bootstrap.php.cache
+move app/SymfonyRequirements.php to var/SymfonyRequirements.php
+move phpunit.xml.dist to root folder (so we don't need to call phpunit -c app/ anymore !)
+update .gitignore file using Symfony3 one
+Also ...
+In Symfony 3, the framework session configuration is already setup:
+
+framework:
+# [...]
+    session:
+        # http://symfony.com/doc/current/reference/configuration/framework.html#handler-id
+        handler_id:  session.handler.native_file
+        save_path:   "%kernel.root_dir%/../var/sessions/%kernel.environment%"
+If you decide to report this change, don't forget to create the sessions folder in var.
+
+Fix the phpunit.xml.dist configuration
+As there is only one folder that contains all the tests, we can simplify the configuration:
+
+// before
+<directory>../src/*Bundle/Tests</directory>
+<directory>../src/*/*Bundle/Tests</directory>
+<directory>../src/*/Bundle/*Bundle/Tests</directory>
+
+// after
+<directory>tests</directory>
+Don't forget to declare the path to the application, this is required:
+
+// before
+<!--
+<php>
+    <server name="KERNEL_DIR" value="/path/to/your/app/" />
+</php>
+-->
+
+// after
+<php>
+    <server name="KERNEL_DIR" value="app/" />
+</php>
+And update the path to the autoloader:
+
+// before
+bootstrap                   = "autoload.php"
+
+// after
+bootstrap                   = "vendor/autoload.php"
+Then execute post-install-cmd composer commands to generate the bootstrap.php.cache file:
+
+composer run-script post-install-cmd
+You can launch tests:
+
+./vendor/bin/phpunit
+Launch all scripts and celebrate
+Composer installation can be completed:
+
+$ composer install && composer dumpautoload -o
+Stuck with forms?
+The intention option was deprecated and will be removed in 3.0 in favor of the new csrf_token_id option.
+
+The csrf_provider option was deprecated and will be removed in 3.0 in favor of the new csrf_token_manager option.
+
+The "cascade_validation" option was deprecated. Use the "constraints" option together with the Valid constraint instead. Contrary to "cascade_validation", "constraints" must be set on the respective child forms, not the parent form.
+
+Before:
+
+$form = $this->createFormBuilder($article, array('cascade_validation' => true))
+    ->add('author', new AuthorType())
+    ->getForm();
+After:
+
+use Symfony\Component\Validator\Constraints\Valid;
+
+$form = $this->createFormBuilder($article)
+    ->add('author', new AuthorType(), array(
+        'constraints' => new Valid(),
+    ))
+    ->getForm();
+Alternatively, you can set the Valid constraint in the model itself:
+
+use Symfony\Component\Validator\Constraints as Assert;
+
+class Article
+{
+    /**
+     * @Assert\Valid
+     */
+    private $author;
+}
+Type names were deprecated and will be removed in Symfony 3.0. Instead of referencing types by name, you should reference them by their fully-qualified class name (FQCN) instead. With PHP 5.5 or later, you can use the "class" constant for that:
+
+Before:
+
+$form = $this->createFormBuilder()
+    ->add('name', 'text')
+    ->add('age', 'integer')
+    ->getForm();
+After:
+
+use Symfony\Component\Form\Extension\Core\Type\IntegerType;
+use Symfony\Component\Form\Extension\Core\Type\TextType;
+
+$form = $this->createFormBuilder()
+    ->add('name', TextType::class)
+    ->add('age', IntegerType::class)
+    ->getForm();
+As a further consequence, the method FormTypeInterface::getName() was deprecated and will be removed in Symfony 3.0. You should remove this method from your form types.
+
+If you want to customize the block prefix of a type in Twig, you should now implement FormTypeInterface::getBlockPrefix() instead:
+
+Before:
+
+class UserProfileType extends AbstractType
+{
+    public function getName()
+    {
+        return 'profile';
+    }
+}
+After:
+
+class UserProfileType extends AbstractType
+{
+    public function getBlockPrefix()
+    {
+        return 'profile';
+    }
+}
+If you don't customize getBlockPrefix(), it defaults to the class name without "Type" suffix in underscore notation (here: "user_profile").
+
+If you want to create types that are compatible with Symfony 2.3 up to 2.8 and don't trigger deprecation errors, implement both getName() and getBlockPrefix():
+
+class ProfileType extends AbstractType
+{
+    public function getName()
+    {
+        return $this->getBlockPrefix();
+    }
+
+    public function getBlockPrefix()
+    {
+        return 'profile';
+    }
+}
+If you define your form types in the Dependency Injection configuration, you should further remove the "alias" attribute:
+
+Before:
+
+<service id="my.type" class="Vendor\Type\MyType">
+    <tag name="form.type" alias="mytype" />
+</service>
+After:
+
+<service id="my.type" class="Vendor\Type\MyType">
+    <tag name="form.type" />
+</service>
+Type extension should return the fully-qualified class name of the extended type from FormTypeExtensionInterface::getExtendedType() now.
+
+Before:
+
+class MyTypeExtension extends AbstractTypeExtension
+{
+    public function getExtendedType()
+    {
+        return 'form';
+    }
+}
+After:
+
+use Symfony\Component\Form\Extension\Core\Type\FormType;
+
+class MyTypeExtension extends AbstractTypeExtension
+{
+    public function getExtendedType()
+    {
+        return FormType::class;
+    }
+}
+If your extension has to be compatible with Symfony 2.3-2.8, use the following statement:
+
+use Symfony\Component\Form\AbstractType;
+use Symfony\Component\Form\Extension\Core\Type\FormType;
+
+class MyTypeExtension extends AbstractTypeExtension
+{
+    public function getExtendedType()
+    {
+        return method_exists(AbstractType::class, 'getBlockPrefix') ? FormType::class : 'form';
+    }
+}
+In Symfony 2.7 a small BC break was introduced with the new choices_as_values option. In order to have the choice values populated to the html value attribute you had to define the choice_value option. This is now not any more needed.
+
+Before:
+
+$form->add('status', 'choice', array(
+    'choices' => array(
+        'Enabled' => Status::ENABLED,
+        'Disabled' => Status::DISABLED,
+        'Ignored' => Status::IGNORED,
+    ),
+    'choices_as_values' => true,
+    // important if you rely on your option value attribute (e.g. for JavaScript)
+    // this will keep the same functionality as before
+    'choice_value' => function ($choice) {
+        return $choice;
+    },
+));
+After (Symfony 2.8+):
+
+$form->add('status', ChoiceType::class, array(
+    'choices' => array(
+        'Enabled' => Status::ENABLED,
+        'Disabled' => Status::DISABLED,
+        'Ignored' => Status::IGNORED,
+    ),
+    'choices_as_values' => true
+));
+Returning type instances from FormTypeInterface::getParent() is deprecated and will not be supported anymore in Symfony 3.0. Return the fully-qualified class name of the parent type class instead.
+
+Before:
+
+class MyType
+{
+    public function getParent()
+    {
+        return new ParentType();
+    }
+}
+After:
+
+class MyType
+{
+    public function getParent()
+    {
+        return ParentType::class;
+    }
+}
+The option "options" of the CollectionType has been renamed to "entry_options". The usage of the option "options" is deprecated and will be removed in Symfony 3.0.
+
+The option "type" of the CollectionType has been renamed to "entry_type". The usage of the option "type" is deprecated and will be removed in Symfony 3.0. As a value for the option you should provide the fully-qualified class name (FQCN) now as well.
+
+Passing type instances to Form::add(), FormBuilder::add() and the FormFactory::create*() methods is deprecated and will not be supported anymore in Symfony 3.0. Pass the fully-qualified class name of the type instead.
+
+Before:
+
+$form = $this->createForm(new MyType());
+After:
+
+$form = $this->createForm(MyType::class);
+Registering type extensions as a service with an alias which does not match the type returned by getExtendedType is now forbidden. Fix your implementation to define the right type.
+
+The alias option of the form.type_extension tag is deprecated in favor of the extended_type/extended-type option.
+
+Before:
+
+<service id="app.type_extension" class="Vendor\Form\Extension\MyTypeExtension">
+    <tag name="form.type_extension" alias="text" />
+</service>
+After:
+
+<service id="app.type_extension" class="Vendor\Form\Extension\MyTypeExtension">
+    <tag name="form.type_extension" extended-type="Symfony\Component\Form\Extension\Core\Type\TextType" />
+</service>
+The TimezoneType::getTimezones() method was deprecated and will be removed in Symfony 3.0. You should not use this method.
+
+The class ArrayKeyChoiceList was deprecated and will be removed in Symfony 3.0. Use ArrayChoiceList instead.
+
+Let me know if I have forgot something important :)
+
+
+
+autre lien:
+https://symfonycasts.com/screencast/symfony3-upgrade/new-dir-structure
